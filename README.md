@@ -50,12 +50,18 @@ streamlit run app.py
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | No | Real anonymous email sending. Use a throwaway Gmail + [App Password](https://myaccount.google.com/apppasswords). Without these, emails run in demo mode and show a preview |
 | `ECO_API_URL` | No (frontend) | Backend URL if it isn't `http://localhost:8000` |
 
-## Deploy
+## Deploy (free, public URL)
 
-The backend and frontend are separate services:
+`start.sh` runs the backend privately on localhost and serves the Streamlit UI on the public port, so you only need **one** service.
 
-1. **Backend → [Render](https://render.com)** (free web service): connect this repo, set the build command to `pip install -r requirements.txt` and the start command to `python main.py`, then add `GROQ_API_KEY` (and SMTP vars if you want them) as environment variables.
-2. **Frontend → [Streamlit Community Cloud](https://share.streamlit.io)**: deploy `app.py` from this repo and set the environment variable / secret `ECO_API_URL` to your Render URL.
+**Render (one click):**
+
+1. Sign in at [render.com](https://render.com) with GitHub
+2. **New → Blueprint** → pick this repo (it reads `render.yaml`)
+3. Paste your `GROQ_API_KEY` when prompted (SMTP vars are optional; leave them blank for demo mode)
+4. Deploy. In about 3–5 minutes the app is live at `https://eco-agent-xxxx.onrender.com`
+
+The free tier sleeps after 15 minutes idle, and the first visit after that takes about a minute to wake up. Open the link a few minutes before you demo.
 
 ## API
 
