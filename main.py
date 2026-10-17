@@ -8,13 +8,14 @@ discuss anonymously, organise events, and generate + publish
 AI-backed evidence briefs for municipal authorities.
 
 Data: Pulse.eco (PM2.5/PM10) + Open-Meteo (weather)
-AI: Llama-3 via Groq (health alerts + municipal briefs)
+AI: gpt-oss-20b via Groq (health alerts + municipal briefs)
 """
 
 from __future__ import annotations
 
 import os
 import json
+import re
 import uuid
 import logging
 import smtplib
@@ -40,7 +41,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 log = logging.getLogger("eco-agent")
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 PULSE_ECO_BASE = "https://skopje.pulse.eco/rest"
 OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
 
@@ -239,6 +240,25 @@ async def _fetch_all_data():
     weather_task = asyncio.create_task(fetch_weather())
     return await pm25_task, await pm10_task, await weather_task
 
+def _make_llm(temperature: float) -> ChatGroq:
+    # JSON mode makes the model return a bare JSON object
+    # gpt-oss reasons before answering; keep that short so the JSON isn't cut off
+    return ChatGroq(model=GROQ_MODEL, temperature=temperature, api_key=GROQ_API_KEY, max_tokens=4096,
+                    reasoning_effort="low" if "gpt-oss" in GROQ_MODEL else None,
+                    model_kwargs={"response_format": {"type": "json_object"}})
+
+
+def _parse_json(text: str) -> dict:
+    """Parse the model's JSON, tolerating markdown fences or text around it."""
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        return json.loads(text[start:end + 1])
+
 # ---------------------------------------------------------------------------
 # AI Agent — Health Alert
 # ---------------------------------------------------------------------------
@@ -296,7 +316,7 @@ async def run_alert_agent(pm25, pm10, weather) -> HealthAlert:
     try:
         if not GROQ_API_KEY:
             raise RuntimeError("GROQ_API_KEY not set")
-        llm = ChatGroq(model=GROQ_MODEL, temperature=0.2, api_key=GROQ_API_KEY)
+        llm = _make_llm(0.2)
         chain = prompt | llm
         result = await chain.ainvoke({
             "pm25_values": pm25_vals[:20],
@@ -310,10 +330,7 @@ async def run_alert_agent(pm25, pm10, weather) -> HealthAlert:
             "humidity_avg": hum_avg,
             "now": now,
         })
-        raw_text = result.content.strip()
-        if raw_text.startswith("```"):
-            raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        parsed = json.loads(raw_text)
+        parsed = _parse_json(result.content)
         return HealthAlert(
             risk_level=parsed.get("risk_level", "low"),
             headline=parsed.get("headline", "Air quality data processed"),
@@ -426,7 +443,7 @@ async def generate_municipal_brief(pm25_avg, pm10_avg, wind_avg, hum_avg, invers
     try:
         if not GROQ_API_KEY:
             raise RuntimeError("GROQ_API_KEY not set")
-        llm = ChatGroq(model=GROQ_MODEL, temperature=0.3, api_key=GROQ_API_KEY)
+        llm = _make_llm(0.3)
         chain = prompt | llm
         result = await chain.ainvoke({
             "pm25_avg": pm25_avg,
@@ -439,20 +456,28 @@ async def generate_municipal_brief(pm25_avg, pm10_avg, wind_avg, hum_avg, invers
             "evidence_text": evidence_text,
             "now": now,
         })
-        raw = result.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        parsed = json.loads(raw)
+        parsed = _parse_json(result.content)
+
+        def text(key, default=""):
+            # The model sometimes returns lists/objects for text fields
+            val = parsed.get(key, default)
+            if isinstance(val, list):
+                return "\n".join(str(v) for v in val)
+            return val if isinstance(val, str) else json.dumps(val)
+
+        demands = parsed.get("demands", [])
+        if isinstance(demands, str):
+            demands = [demands]
         brief_id = uuid.uuid4().hex[:12]
         return MunicipalBrief(
             id=brief_id,
-            title=parsed.get("title", "Municipal Air Quality Brief -- Skopje"),
+            title=text("title", "Municipal Air Quality Brief -- Skopje"),
             date=now,
-            air_quality_summary=parsed.get("air_quality_summary", ""),
-            citizen_reports_summary=parsed.get("citizen_reports_summary", ""),
-            demands=parsed.get("demands", []),
-            evidence=parsed.get("evidence", ""),
-            full_text=parsed.get("full_text", ""),
+            air_quality_summary=text("air_quality_summary"),
+            citizen_reports_summary=text("citizen_reports_summary"),
+            demands=[re.sub(r"^\s*\d+[.)]\s*", "", str(d)) for d in demands],
+            evidence=text("evidence"),
+            full_text=text("full_text"),
         )
     except Exception as exc:
         log.error("Brief agent error: %s", exc)

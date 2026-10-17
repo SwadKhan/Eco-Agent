@@ -454,5 +454,5 @@ st.divider()
 st.caption(
     "Built at Hacktoberfest 2026 · Base42, Skopje 🇲🇰 · "
     "Data: [pulse.eco](https://pulse.eco) + [Open-Meteo](https://open-meteo.com) · "
-    "AI: Llama-3 via [Groq](https://groq.com) · 100% open-source · 100% anonymous"
+    "AI: gpt-oss-20b via [Groq](https://groq.com) · 100% open-source · 100% anonymous"
 )

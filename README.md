@@ -18,7 +18,7 @@ Built at Hacktoberfest 2026, Base42, Skopje 🇲🇰
 
 ## Stack
 
-- **AI:** Llama 3.1 8B via [Groq](https://console.groq.com) (free tier) + LangChain. If no key is set, it falls back to rule-based alerts and template briefs
+- **AI:** OpenAI gpt-oss-20b (open-weight) via [Groq](https://console.groq.com) (free tier) + LangChain. If no key is set, it falls back to rule-based alerts and template briefs
 - **Open data:** [Pulse.eco](https://pulse.eco) REST API and [Open-Meteo](https://open-meteo.com), neither needs an API key
 - **Backend:** FastAPI + Pydantic + httpx, email via Python's built-in `smtplib`
 - **Frontend:** Streamlit
@@ -46,7 +46,7 @@ streamlit run app.py
 | Variable | Required | Purpose |
 |---|---|---|
 | `GROQ_API_KEY` | Recommended | AI alerts and briefs. Free at console.groq.com. Without it, rule-based fallback is used |
-| `GROQ_MODEL` | No | Defaults to `llama-3.1-8b-instant` |
+| `GROQ_MODEL` | No | Defaults to `openai/gpt-oss-20b` |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | No | Real anonymous email sending. Use a throwaway Gmail + [App Password](https://myaccount.google.com/apppasswords). Without these, emails run in demo mode and show a preview |
 | `ECO_API_URL` | No (frontend) | Backend URL if it isn't `http://localhost:8000` |
 
