@@ -48,6 +48,7 @@ streamlit run app.py
 | `GROQ_API_KEY` | Recommended | AI alerts and briefs. Free at console.groq.com. Without it, rule-based fallback is used |
 | `GROQ_MODEL` | No | Defaults to `openai/gpt-oss-20b` |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | No | Real anonymous email sending. Use a throwaway Gmail + [App Password](https://myaccount.google.com/apppasswords). Without these, emails run in demo mode and show a preview |
+| `DEMO_SEED` | No | `1` loads a few days of sample reports, comments, events and a brief at startup (labelled as sample in the UI) |
 | `ECO_API_URL` | No (frontend) | Backend URL if it isn't `http://localhost:8000` |
 
 ## Deploy (free, public URL)

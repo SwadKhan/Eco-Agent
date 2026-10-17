@@ -8,6 +8,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+      - key: DEMO_SEED
+        value: "1"
       - key: GROQ_API_KEY
         sync: false
       - key: SMTP_HOST

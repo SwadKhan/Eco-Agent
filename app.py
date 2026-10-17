@@ -5,6 +5,7 @@ Requires the FastAPI backend on localhost:8000.
 """
 
 import os
+from datetime import datetime, timezone
 
 import streamlit as st
 import httpx
@@ -54,6 +55,44 @@ def api_post(path, data, timeout=30):
     except Exception as e:
         st.error(f"Backend error: {e}")
         return None
+
+def ago(ts):
+    """ISO timestamp -> '5 min ago' style."""
+    try:
+        secs = (datetime.now(timezone.utc) - datetime.fromisoformat(ts)).total_seconds()
+    except (TypeError, ValueError):
+        return ""
+    if secs < 60:
+        return "just now"
+    for unit, size in (("day", 86400), ("h", 3600), ("min", 60)):
+        if secs >= size:
+            n = int(secs // size)
+            return f"{n} {unit}{'s' if unit == 'day' and n > 1 else ''} ago"
+
+def post_comment(report_id):
+    # Runs as a button callback so the input can be cleared afterwards
+    key = f"comment_input_{report_id}"
+    text = st.session_state.get(key, "").strip()
+    if text:
+        api_post(f"/reports/{report_id}/comments", {"text": text})
+        st.session_state[key] = ""
+
+@st.fragment(run_every=4)
+def live_feed():
+    # Re-runs on its own every few seconds, so new comments show up without a reload
+    st.markdown("### 💬 Live discussion")
+    feed = api_get("/comments/recent?limit=6")
+    if not feed or not feed.get("comments"):
+        st.caption("No comments yet.")
+        return
+    for c in feed["comments"]:
+        cat = CATEGORY_LABELS.get(c.get("category", ""), c.get("category", ""))
+        st.markdown(
+            f"**{c.get('anon_label', 'Citizen')}** on {cat} · {c.get('neighbourhood', '')} "
+            f"<span style='color:#888;font-size:0.85em'>· {ago(c.get('timestamp'))}</span>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"“{c.get('text', '')}”")
 
 @st.cache_data(ttl=300, show_spinner=False)
 def cached_alert():
@@ -198,18 +237,24 @@ with tab_dashboard:
         m3.metric("Discussions", dashboard.get("total_comments", 0))
         m4.metric("With Evidence", dashboard.get("reports_with_evidence", 0))
         m5.metric("Briefs Published", dashboard.get("total_briefs_published", 0))
+        if dashboard.get("has_sample_data"):
+            st.caption("ℹ️ Includes sample history so the dashboard shows how it looks in use.")
 
-        # Category breakdown
-        by_cat = dashboard.get("by_category", {})
-        if by_cat:
-            st.markdown("### Reports by category")
-            st.bar_chart(by_cat)
+        col_charts, col_feed = st.columns([3, 2], gap="large")
+        with col_charts:
+            # Category breakdown
+            by_cat = dashboard.get("by_category", {})
+            if by_cat:
+                st.markdown("### Reports by category")
+                st.bar_chart({CATEGORY_LABELS.get(k, k): v for k, v in by_cat.items()}, horizontal=True)
 
-        # Neighbourhood breakdown
-        by_hood = dashboard.get("by_neighbourhood", {})
-        if by_hood:
-            st.markdown("### Reports by neighbourhood")
-            st.bar_chart(by_hood)
+            # Neighbourhood breakdown
+            by_hood = dashboard.get("by_neighbourhood", {})
+            if by_hood:
+                st.markdown("### Reports by neighbourhood")
+                st.bar_chart(by_hood, horizontal=True)
+        with col_feed:
+            live_feed()
 
         # Recent reports with discussion
         st.markdown("---")
@@ -233,7 +278,8 @@ with tab_dashboard:
                             f"**{cat_label}{evidence_badge}** · "
                             f"{r.get('neighbourhood', 'Unknown area')} · "
                             f"PM2.5: {r.get('pm25_at_time', '?')} ug/m3 · "
-                            f"Urgency: {'🔴' * r.get('urgency', 1)}"
+                            f"Urgency: {'🔴' * r.get('urgency', 1)} · "
+                            f"_{ago(r.get('timestamp'))}_"
                         )
                         st.caption(r.get("description", ""))
 
@@ -257,20 +303,21 @@ with tab_dashboard:
                         comments_data = api_get(f"/reports/{report_id}/comments")
                         if comments_data and comments_data.get("comments"):
                             for c in comments_data["comments"]:
-                                st.markdown(f"**{c.get('anon_label', 'Citizen')}** · _{c.get('timestamp', '')[:16]}_")
-                                st.caption(c.get("text", ""))
-                                st.markdown("---")
+                                st.markdown(
+                                    f"**{c.get('anon_label', 'Citizen')}** "
+                                    f"<span style='color:#888;font-size:0.85em'>· {ago(c.get('timestamp'))}</span><br>"
+                                    f"{c.get('text', '')}",
+                                    unsafe_allow_html=True,
+                                )
 
                         # Add comment form
-                        comment_text = st.text_input(
+                        st.text_input(
                             "Add to discussion (anonymous)",
                             placeholder="Share your observation or additional info...",
                             key=f"comment_input_{report_id}",
                         )
-                        if st.button("Post comment", key=f"comment_btn_{report_id}"):
-                            if comment_text:
-                                api_post(f"/reports/{report_id}/comments", {"text": comment_text})
-                                st.rerun()
+                        st.button("Post comment", key=f"comment_btn_{report_id}",
+                                  on_click=post_comment, args=(report_id,))
 
                     st.divider()
         else:

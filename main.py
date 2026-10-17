@@ -20,7 +20,7 @@ import uuid
 import logging
 import smtplib
 from email.mime.text import MIMEText
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -532,7 +532,8 @@ def send_anonymous_email(brief: dict, recipients: list[str], sender_alias: str) 
     body += "\nThis brief contains verified sensor data from pulse.eco and citizen reports."
     body += "\n\nGenerated: " + brief.get("date", "")
 
-    if not smtp_host or not smtp_user:
+    # Treat the .env.example placeholders as "not configured"
+    if not smtp_host or not smtp_user or not smtp_pass or smtp_pass == "your_app_password":
         # Demo mode — queue the email for display
         log.info("SMTP not configured — email queued for demo")
         return {
@@ -559,6 +560,111 @@ def send_anonymous_email(brief: dict, recipients: list[str], sender_alias: str) 
     except Exception as exc:
         log.error("Email send failed: %s", exc)
         return {"status": "failed", "error": str(exc), "recipients": recipients}
+
+# ---------------------------------------------------------------------------
+# Sample history (DEMO_SEED=1) — data is in-memory, so without this the
+# public dashboard is empty after every restart. Seeded rows are flagged
+# "sample" and the UI labels them.
+# ---------------------------------------------------------------------------
+
+SAMPLE_REPORTS = [
+    # (hours ago, category, neighbourhood, urgency, pm25, pm10, supports, description, evidence)
+    (70, "illegal_burning", "Aerodrom", 4, 48.2, 71.5, 9,
+     "Thick smoke from several backyard stoves on the east side of Aerodrom every evening after 6pm.",
+     "Smell of burning plastic and tyres, visible haze over the blocks near the market."),
+    (52, "construction_dust", "Karposh", 3, 31.7, 88.0, 4,
+     "Large building site on bul. Partizanski Odredi with no dust covers, trucks leave mud and dust on the road.",
+     ""),
+    (40, "factory_emissions", "Butel", 5, 57.9, 92.3, 12,
+     "Dark grey plume from the industrial zone stacks early in the morning, strongest between 5 and 7am.",
+     "Plume photographed from the Butel roundabout at 06:10, drifting towards the city centre."),
+    (26, "waste_dumping", "Gazi Baba", 3, 36.4, 59.8, 6,
+     "Illegal dump by the river bank keeps getting set on fire at night.",
+     "Burnt waste pile roughly 20 metres long, still smouldering in the morning."),
+    (14, "vehicle_exhaust", "Centar", 2, 29.3, 47.1, 3,
+     "Idling buses and trucks around the main bus station, black exhaust at rush hour.",
+     ""),
+    (5, "municipal_negligence", "Kisela Voda", 4, 44.0, 66.2, 7,
+     "Promised street-cleaning and watering of dusty roads has not happened in weeks.",
+     "Dust on parked cars is visibly thicker every day; no cleaning vehicles seen since September."),
+    (64, "illegal_burning", "Aerodrom", 3, 51.0, 74.8, 5,
+     "Someone burns garden waste and plastic in the lot behind the school on Jane Sandanski.", ""),
+    (45, "illegal_burning", "Karposh", 4, 46.3, 69.0, 8,
+     "Wood and coal stoves in the older houses, the whole street is foggy with smoke at night.", ""),
+    (33, "factory_emissions", "Butel", 4, 53.1, 85.6, 6,
+     "Strong chemical smell near the industrial zone, worse when there is no wind.", ""),
+    (9, "illegal_burning", "Gazi Baba", 3, 41.8, 63.4, 4,
+     "Cable burning near the scrapyard to recover copper, black smoke for over an hour.",
+     "Black smoke column visible from the main road around 20:30."),
+]
+
+SAMPLE_COMMENTS = [
+    # (report index, hours ago, text)
+    (0, 68, "Same in my building, we have to keep windows shut every night."),
+    (0, 60, "It's worst on weekends. My kid's asthma gets noticeably worse."),
+    (0, 30, "Has anyone reported this to the inspectorate? Happy to sign something."),
+    (2, 39, "I drive past at 6am every day, can confirm the plume."),
+    (2, 37, "The PM2.5 sensor in Butel jumps every morning at the same time, matches this."),
+    (2, 20, "We should bring this report to the next council session."),
+    (3, 25, "Called the communal service twice, no response."),
+    (5, 4, "Same on my street near the Kisela Voda market."),
+    (5, 3, "The municipality's website still says weekly cleaning."),
+]
+
+SAMPLE_EVENTS = [
+    # (hours ago, title, type, neighbourhood, date, attendees, description)
+    (48, "Gradski Park clean-air cleanup", "cleanup", "Centar", "Saturday 10:00", 23,
+     "Bring gloves and bags. Meeting at the main entrance."),
+    (20, "Petition: enforce the burning ban in Aerodrom", "petition", "Aerodrom", "Ongoing", 41,
+     "Collecting signatures to present at the next municipal council session."),
+]
+
+
+def _seed_demo_data():
+    now = datetime.now(timezone.utc)
+    ago = lambda h: (now - timedelta(hours=h)).isoformat()
+    ids = {}  # SAMPLE_REPORTS index -> report id, for attaching comments
+    for i in sorted(range(len(SAMPLE_REPORTS)), key=lambda i: -SAMPLE_REPORTS[i][0]):
+        hours, cat, hood, urg, pm25, pm10, supports, desc, ev = SAMPLE_REPORTS[i]
+        rid = ids[i] = uuid.uuid4().hex[:12]
+        REPORTS_DB.append({
+            "id": rid, "category": cat, "description": desc, "neighbourhood": hood, "urgency": urg,
+            "evidence_links": [], "evidence_text": ev, "timestamp": ago(hours),
+            "pm25_at_time": pm25, "pm10_at_time": pm10, "supports": supports, "sample": True,
+        })
+        UPVOTES_DB[rid] = supports
+    for idx, hours, text in SAMPLE_COMMENTS:
+        rid = ids[idx]
+        n = sum(1 for c in COMMENTS_DB if c["report_id"] == rid) + 1
+        COMMENTS_DB.append({"id": uuid.uuid4().hex[:12], "report_id": rid, "text": text,
+                            "timestamp": ago(hours), "anon_label": f"Citizen #{n}", "sample": True})
+    COMMENTS_DB.sort(key=lambda c: c["timestamp"])
+    for hours, title, etype, hood, date, attendees, desc in SAMPLE_EVENTS:
+        EVENTS_DB.append({"id": uuid.uuid4().hex[:12], "title": title, "description": desc,
+                          "event_type": etype, "neighbourhood": hood, "date": date,
+                          "created_at": ago(hours), "attendees": attendees, "sample": True})
+    BRIEFS_DB.append({
+        "id": uuid.uuid4().hex[:12], "title": "Air Quality Brief: Burning and Industrial Emissions",
+        "date": ago(30), "published": True, "published_at": ago(30), "email_sent_to": [], "sample": True,
+        "air_quality_summary": "PM2.5 averaged 52 ug/m3 across Skopje, 3.5x the WHO limit, with evening peaks in Aerodrom and morning peaks in Butel.",
+        "citizen_reports_summary": "3 citizen reports: illegal burning (Aerodrom), factory emissions (Butel), construction dust (Karposh).",
+        "demands": ["Enforce the residential burning ban in Aerodrom with evening inspections",
+                    "Inspect the Butel industrial zone stacks between 5 and 7am",
+                    "Require dust covers and road cleaning at large construction sites"],
+        "evidence": "Pulse.eco sensor readings at the time of each report; 25 community supports.",
+        "full_text": "To the Municipality of Skopje,\n\nOver the past three days citizens filed reports of "
+                     "illegal burning in Aerodrom, industrial emissions in Butel and construction dust in Karposh, "
+                     "each matching PM2.5 readings well above the WHO limit.\n\nWe request that the Municipality:\n"
+                     "1. Enforce the residential burning ban in Aerodrom with evening inspections\n"
+                     "2. Inspect the Butel industrial zone stacks between 5 and 7am\n"
+                     "3. Require dust covers and road cleaning at large construction sites\n\n"
+                     "Concerned Citizens of Skopje",
+    })
+    log.info("Seeded sample history: %d reports, %d comments", len(REPORTS_DB), len(COMMENTS_DB))
+
+
+if os.getenv("DEMO_SEED") == "1":
+    _seed_demo_data()
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -794,14 +900,25 @@ async def public_dashboard():
 
     # Recent reports with comment counts
     recent = []
-    for r in list(reversed(REPORTS_DB[-10:])):
+    for r in list(reversed(REPORTS_DB[-15:])):
         r_copy = dict(r)
         r_copy["comment_count"] = sum(1 for c in COMMENTS_DB if c["report_id"] == r["id"])
         r_copy["supports"] = UPVOTES_DB.get(r["id"], 0)
         recent.append(r_copy)
     stats["recent_reports"] = recent
+    stats["has_sample_data"] = any(r.get("sample") for r in REPORTS_DB)
 
     return stats
+
+@app.get("/comments/recent")
+async def recent_comments(limit: int = 8):
+    """Newest comments across all reports, for the live discussion feed."""
+    reports = {r["id"]: r for r in REPORTS_DB}
+    feed = []
+    for c in reversed(COMMENTS_DB[-limit:]):
+        r = reports.get(c["report_id"], {})
+        feed.append({**c, "category": r.get("category", ""), "neighbourhood": r.get("neighbourhood", "")})
+    return {"comments": feed, "total": len(COMMENTS_DB)}
 
 # --- Meta ---
 @app.get("/categories")
