@@ -902,7 +902,9 @@ async def public_dashboard():
     recent = []
     for r in list(reversed(REPORTS_DB[-15:])):
         r_copy = dict(r)
-        r_copy["comment_count"] = sum(1 for c in COMMENTS_DB if c["report_id"] == r["id"])
+        # Include the thread so the UI needs one request, not one per report
+        r_copy["comments"] = [c for c in COMMENTS_DB if c["report_id"] == r["id"]]
+        r_copy["comment_count"] = len(r_copy["comments"])
         r_copy["supports"] = UPVOTES_DB.get(r["id"], 0)
         recent.append(r_copy)
     stats["recent_reports"] = recent

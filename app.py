@@ -299,16 +299,13 @@ with tab_dashboard:
 
                     # Discussion thread
                     with st.expander(f"💬 Discussion ({comment_count} comments)"):
-                        # Load comments
-                        comments_data = api_get(f"/reports/{report_id}/comments")
-                        if comments_data and comments_data.get("comments"):
-                            for c in comments_data["comments"]:
-                                st.markdown(
-                                    f"**{c.get('anon_label', 'Citizen')}** "
-                                    f"<span style='color:#888;font-size:0.85em'>· {ago(c.get('timestamp'))}</span><br>"
-                                    f"{c.get('text', '')}",
-                                    unsafe_allow_html=True,
-                                )
+                        for c in r.get("comments", []):
+                            st.markdown(
+                                f"**{c.get('anon_label', 'Citizen')}** "
+                                f"<span style='color:#888;font-size:0.85em'>· {ago(c.get('timestamp'))}</span><br>"
+                                f"{c.get('text', '')}",
+                                unsafe_allow_html=True,
+                            )
 
                         # Add comment form
                         st.text_input(
